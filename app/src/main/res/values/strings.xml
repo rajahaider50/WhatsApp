@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">WhatsApp</string>
+    <string name="notification_channel_messages">WhatsApp Messages</string>
+    <string name="notification_channel_calls">WhatsApp Incoming Calls</string>
+</resources>
