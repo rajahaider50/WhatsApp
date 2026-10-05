@@ -27,6 +27,7 @@ class CallRepository {
                     val session = child.getValue(CallSession::class.java)
                     if (session != null &&
                         session.receiverUid == currentUid &&
+                        session.callerUid != currentUid && // do not trigger incoming dialog on self-call
                         session.status == CallStatus.RINGING.name &&
                         System.currentTimeMillis() - session.timestamp < 60000 // within 60s
                     ) {
@@ -56,11 +57,14 @@ class CallRepository {
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    // Initiate a call
+    // Initiate a call (supports self-call connected immediately)
     suspend fun startCall(caller: User, receiver: User, type: CallType): Result<CallSession> {
         return try {
             val callId = db.reference.child(FirebaseConfig.Nodes.CALLS).push().key
                 ?: "call_${System.currentTimeMillis()}"
+
+            val isSelfCall = caller.uid == receiver.uid
+            val initialStatus = if (isSelfCall) CallStatus.CONNECTED.name else CallStatus.RINGING.name
 
             val session = CallSession(
                 callId = callId,
@@ -68,10 +72,10 @@ class CallRepository {
                 callerName = caller.displayName,
                 callerAvatar = caller.avatarUrl,
                 receiverUid = receiver.uid,
-                receiverName = receiver.displayName,
+                receiverName = if (isSelfCall) "You (Self Call)" else receiver.displayName,
                 receiverAvatar = receiver.avatarUrl,
                 type = type.name,
-                status = CallStatus.RINGING.name,
+                status = initialStatus,
                 timestamp = System.currentTimeMillis()
             )
 

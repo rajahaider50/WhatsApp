@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.whatsapp.android.ui.theme.WhatsAppDarkSurface
+import com.whatsapp.android.ui.theme.WhatsAppLightGreen
 import com.whatsapp.android.ui.theme.WhatsAppTextLight
 import com.whatsapp.android.ui.theme.WhatsAppTextMuted
 
@@ -25,6 +26,7 @@ fun WhatsAppTopBar(
     onStarredClick: () -> Unit = {},
     onRecoveryClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
+    onDeveloperClick: () -> Unit = {},
     onSignOutClick: () -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -102,6 +104,14 @@ fun WhatsAppTopBar(
                         onClick = {
                             showMenu = false
                             onStarredClick()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Developer Details", color = WhatsAppLightGreen) },
+                        leadingIcon = { Icon(Icons.Default.Code, null, tint = WhatsAppLightGreen) },
+                        onClick = {
+                            showMenu = false
+                            onDeveloperClick()
                         }
                     )
                     DropdownMenuItem(

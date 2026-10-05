@@ -2,9 +2,12 @@ package com.whatsapp.android.ui.screens.call
 
 import android.content.Context
 import android.media.AudioManager
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -81,71 +84,242 @@ fun ActiveCallScreen(
     val seconds = durationSeconds % 60
     val durationFormatted = String.format("%02d:%02d", minutes, seconds)
 
+    val isSelfCall = callSession.callerUid == callSession.receiverUid
+    val isVideo = callSession.type == CallType.VIDEO.name
+
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseScale"
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(WhatsAppDarkBg)
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(24.dp)
     ) {
-        // Center: Peer Avatar and Details
-        Column(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(bottom = 60.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+        // VIDEO CALL: Dual Camera / Mirror View
+        if (isVideo && isVideoEnabled) {
+            // 1. Main Background Viewport (Opponent view - for self call, shows You!)
             Box(
                 modifier = Modifier
-                    .size(140.dp)
-                    .clip(CircleShape)
-                    .background(WhatsAppDarkCard),
+                    .fillMaxSize()
+                    .background(Color.Black),
                 contentAlignment = Alignment.Center
             ) {
                 val avatar = callSession.receiverAvatar ?: callSession.callerAvatar
                 if (!avatar.isNullOrEmpty()) {
                     AsyncImage(
                         model = avatar,
-                        contentDescription = "Caller",
+                        contentDescription = "Main View",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        tint = WhatsAppTextMuted,
-                        modifier = Modifier.size(80.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(WhatsAppDarkCard),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = WhatsAppTextMuted,
+                            modifier = Modifier.size(120.dp)
+                        )
+                    }
+                }
+
+                // Overlay gradient for readability
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.35f))
+                )
+
+                // Top Banner with Caller Info
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(start = 20.dp, top = 20.dp)
+                ) {
+                    Text(
+                        text = if (isSelfCall) "You (Self Video Call)" else callSession.receiverName.ifBlank { callSession.callerName },
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (currentStatus == CallStatus.CONNECTED.name) durationFormatted else "Connecting...",
+                        color = WhatsAppLightGreen,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (isSelfCall) {
+                        Text(
+                            text = "Dual Mirror / Camera Preview Active",
+                            color = WhatsAppLightGreen.copy(alpha = 0.8f),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                // 2. Picture-in-Picture Secondary Window (Self View)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(end = 16.dp, top = 20.dp)
+                        .size(width = 110.dp, height = 160.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(WhatsAppDarkCard)
+                        .border(2.dp, WhatsAppLightGreen, RoundedCornerShape(14.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!callSession.callerAvatar.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = callSession.callerAvatar,
+                            contentDescription = "Self Pip",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
+
+                    // Badge on PiP
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.6f))
+                            .padding(vertical = 3.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (isFrontCamera) "Front Cam" else "Back Cam",
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        } else {
+            // AUDIO CALL: Central Animated Waveform & Caller Details
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(bottom = 80.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Pulsating Circle around Avatar
+                Box(contentAlignment = Alignment.Center) {
+                    if (currentStatus == CallStatus.CONNECTED.name) {
+                        Box(
+                            modifier = Modifier
+                                .size(170.dp * pulseScale)
+                                .clip(CircleShape)
+                                .background(WhatsAppLightGreen.copy(alpha = 0.15f))
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(150.dp * pulseScale)
+                                .clip(CircleShape)
+                                .background(WhatsAppLightGreen.copy(alpha = 0.25f))
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(130.dp)
+                            .clip(CircleShape)
+                            .background(WhatsAppDarkCard)
+                            .border(3.dp, WhatsAppLightGreen, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val avatar = callSession.receiverAvatar ?: callSession.callerAvatar
+                        if (!avatar.isNullOrEmpty()) {
+                            AsyncImage(
+                                model = avatar,
+                                contentDescription = "Caller",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = null,
+                                tint = WhatsAppTextMuted,
+                                modifier = Modifier.size(70.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = if (isSelfCall) "You (Self Audio Call)" else callSession.receiverName.ifBlank { callSession.callerName },
+                    color = WhatsAppTextLight,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = if (currentStatus == CallStatus.CONNECTED.name) durationFormatted else "Connecting...",
+                    color = if (currentStatus == CallStatus.CONNECTED.name) WhatsAppLightGreen else WhatsAppTextMuted,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                if (isSelfCall) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(WhatsAppDarkCard)
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Hearing,
+                            contentDescription = null,
+                            tint = WhatsAppLightGreen,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Dual Voice Audio Active",
+                            color = WhatsAppLightGreen,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "WhatsApp End-to-End Encrypted",
+                        color = WhatsAppTextMuted,
+                        fontSize = 12.sp
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Text(
-                text = callSession.receiverName.ifBlank { callSession.callerName },
-                color = WhatsAppTextLight,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = if (currentStatus == CallStatus.CONNECTED.name) durationFormatted else "Ringing...",
-                color = if (currentStatus == CallStatus.CONNECTED.name) WhatsAppLightGreen else WhatsAppTextMuted,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "WhatsApp ${if (callSession.type == CallType.VIDEO.name) "Video" else "Audio"} Call (End-to-End Encrypted)",
-                color = WhatsAppTextMuted,
-                fontSize = 12.sp
-            )
         }
 
         // Bottom Controls Bar

@@ -31,6 +31,10 @@ fun SettingsScreen(
     onAccountRecoveryClick: () -> Unit,
     onPrivacyClick: () -> Unit,
     onStarredClick: () -> Unit,
+    onChatsClick: () -> Unit = {},
+    onStorageClick: () -> Unit = {},
+    onAppInfoClick: () -> Unit = {},
+    onDeveloperProfileClick: () -> Unit = {},
     onSignOutClick: () -> Unit
 ) {
     LazyColumn(
@@ -104,6 +108,75 @@ fun SettingsScreen(
             HorizontalDivider(color = WhatsAppDarkCard, modifier = Modifier.padding(horizontal = 16.dp))
         }
 
+        // Developer Profile Featured Card
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(WhatsAppDarkCard)
+                    .clickable { onDeveloperProfileClick() }
+                    .padding(14.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(WhatsAppLightGreen.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Code,
+                            contentDescription = "Developer",
+                            tint = WhatsAppLightGreen,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Raja Haider Ali",
+                                color = WhatsAppTextLight,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Default.Verified,
+                                contentDescription = "Verified",
+                                tint = WhatsAppLightGreen,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Text(
+                            text = "03495031007 · @haideredits463",
+                            color = WhatsAppLightGreen,
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            text = "Rawalpindi Islamabad · Tap for contact & details",
+                            color = WhatsAppTextMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        tint = WhatsAppLightGreen,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            HorizontalDivider(color = WhatsAppDarkCard, modifier = Modifier.padding(horizontal = 16.dp))
+        }
+
         // Settings Category Items
         item {
             SettingsItemRow(
@@ -131,28 +204,21 @@ fun SettingsScreen(
                 icon = Icons.Default.Chat,
                 title = "Chats",
                 subtitle = "Theme, wallpapers, chat history",
-                onClick = {}
-            )
-
-            SettingsItemRow(
-                icon = Icons.Default.Notifications,
-                title = "Notifications",
-                subtitle = "Message, group and call tones",
-                onClick = {}
+                onClick = onChatsClick
             )
 
             SettingsItemRow(
                 icon = Icons.Default.Storage,
                 title = "Storage and data",
                 subtitle = "Cloudinary media storage and network usage",
-                onClick = {}
+                onClick = onStorageClick
             )
 
             SettingsItemRow(
                 icon = Icons.Default.Info,
                 title = "App Info",
                 subtitle = "WhatsApp Native Android v1.0.0",
-                onClick = {}
+                onClick = onAppInfoClick
             )
 
             Spacer(modifier = Modifier.height(16.dp))

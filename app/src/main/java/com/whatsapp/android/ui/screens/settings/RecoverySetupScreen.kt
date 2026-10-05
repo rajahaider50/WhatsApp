@@ -250,26 +250,25 @@ fun RecoverySetupScreen(
 
         Button(
             onClick = {
-                // Validation based on method
+                val digitsOnly = secretValue.filter { it.isDigit() }
                 when (selectedMethod) {
                     RecoveryMethod.BACKUP_CODE -> {
-                        if (secretValue.trim().length != 8 || !secretValue.trim().all { it.isDigit() }) {
+                        if (digitsOnly.length != 8) {
                             message = "Code must be exactly 8 numeric digits"
                             isSuccess = false
                             return@Button
                         }
                     }
                     RecoveryMethod.CNIC -> {
-                        val cleanDigits = secretValue.replace("-", "").trim()
-                        if (cleanDigits.length != 13 || !cleanDigits.all { it.isDigit() }) {
-                            message = "CNIC must be exactly 13 numeric digits"
+                        if (digitsOnly.length != 13) {
+                            message = "CNIC must be exactly 13 numeric digits (found ${digitsOnly.length})"
                             isSuccess = false
                             return@Button
                         }
                     }
                     RecoveryMethod.PHONE -> {
-                        if (secretValue.trim().length < 10) {
-                            message = "Please enter a valid phone number"
+                        if (digitsOnly.length < 10) {
+                            message = "Please enter a valid phone number (at least 10 digits)"
                             isSuccess = false
                             return@Button
                         }
@@ -280,14 +279,14 @@ fun RecoverySetupScreen(
                 message = null
 
                 coroutineScope.launch {
-                    val res = authRepo.saveRecoveryOption(selectedMethod.name, secretValue.trim())
+                    val res = authRepo.saveRecoveryOption(selectedMethod.name, digitsOnly)
                     isSaving = false
                     res.onSuccess {
                         isSuccess = true
                         message = "Recovery method verified and successfully connected to Firebase!"
                         existingConfig = RecoveryConfig(
                             method = selectedMethod.name,
-                            secretValue = secretValue.trim(),
+                            secretValue = digitsOnly,
                             isConfigured = true
                         )
                     }.onFailure { e ->

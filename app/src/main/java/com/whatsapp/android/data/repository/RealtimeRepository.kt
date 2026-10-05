@@ -23,9 +23,9 @@ class RealtimeRepository {
 
     fun getCurrentUid(): String? = auth.currentUser?.uid
 
-    // Generate consistent chatId between two users
+    // Generate consistent chatId between two users (supports self-chat "self_$uid")
     fun getChatId(uid1: String, uid2: String): String {
-        return if (uid1 < uid2) "${uid1}_${uid2}" else "${uid2}_${uid1}"
+        return if (uid1 == uid2) "self_$uid1" else if (uid1 < uid2) "${uid1}_${uid2}" else "${uid2}_${uid1}"
     }
 
     // Observe chats list for a user
@@ -95,6 +95,9 @@ class RealtimeRepository {
             val msgId = db.reference.child(FirebaseConfig.Nodes.MESSAGES).child(chatId).push().key
                 ?: "msg_${System.currentTimeMillis()}"
 
+            val isSelf = sender.uid == receiver.uid || chatId.startsWith("self_")
+            val initialStatus = if (isSelf) MessageStatus.SEEN.name else MessageStatus.SENT.name
+
             val message = ChatMessage(
                 id = msgId,
                 chatId = chatId,
@@ -105,10 +108,10 @@ class RealtimeRepository {
                 type = type.name,
                 mediaUrl = mediaUrl,
                 isViewOnce = isViewOnce,
-                isViewed = false,
+                isViewed = isSelf,
                 isStarred = false,
                 isDeletedForEveryone = false,
-                status = MessageStatus.SENT.name,
+                status = initialStatus,
                 timestamp = System.currentTimeMillis(),
                 audioDurationSeconds = audioDurationSeconds,
                 fileName = fileName
@@ -129,35 +132,37 @@ class RealtimeRepository {
             val senderPreview = ChatPreview(
                 chatId = chatId,
                 peerUid = receiver.uid,
-                peerUsername = receiver.username,
-                peerDisplayName = receiver.displayName,
+                peerUsername = if (isSelf) sender.username else receiver.username,
+                peerDisplayName = if (isSelf) "You (Message yourself)" else receiver.displayName,
                 peerAvatarUrl = receiver.avatarUrl,
                 lastMessage = lastMsgText,
                 lastMessageType = type.name,
                 lastTimestamp = message.timestamp,
                 unreadCount = 0,
-                isOnline = receiver.isOnline,
+                isOnline = true,
                 lastMessageSenderId = sender.uid,
-                lastMessageStatus = message.status
+                lastMessageStatus = initialStatus
             )
             db.reference.child(FirebaseConfig.Nodes.CHATS).child(sender.uid).child(chatId).setValue(senderPreview).await()
 
-            // Update receiver's chat preview with incremented unread count
-            val receiverPreview = ChatPreview(
-                chatId = chatId,
-                peerUid = sender.uid,
-                peerUsername = sender.username,
-                peerDisplayName = sender.displayName,
-                peerAvatarUrl = sender.avatarUrl,
-                lastMessage = lastMsgText,
-                lastMessageType = type.name,
-                lastTimestamp = message.timestamp,
-                unreadCount = 1,
-                isOnline = sender.isOnline,
-                lastMessageSenderId = sender.uid,
-                lastMessageStatus = message.status
-            )
-            db.reference.child(FirebaseConfig.Nodes.CHATS).child(receiver.uid).child(chatId).setValue(receiverPreview).await()
+            // Update receiver's chat preview with incremented unread count (if not self chat)
+            if (!isSelf) {
+                val receiverPreview = ChatPreview(
+                    chatId = chatId,
+                    peerUid = sender.uid,
+                    peerUsername = sender.username,
+                    peerDisplayName = sender.displayName,
+                    peerAvatarUrl = sender.avatarUrl,
+                    lastMessage = lastMsgText,
+                    lastMessageType = type.name,
+                    lastTimestamp = message.timestamp,
+                    unreadCount = 1,
+                    isOnline = sender.isOnline,
+                    lastMessageSenderId = sender.uid,
+                    lastMessageStatus = initialStatus
+                )
+                db.reference.child(FirebaseConfig.Nodes.CHATS).child(receiver.uid).child(chatId).setValue(receiverPreview).await()
+            }
 
             Result.success(message)
         } catch (e: Exception) {
@@ -243,5 +248,45 @@ class RealtimeRepository {
         }
         ref.addValueEventListener(listener)
         awaitClose { ref.removeEventListener(listener) }
+    }
+
+    // Observe starred messages for user across all their chats
+    fun observeStarredMessages(currentUid: String): Flow<List<ChatMessage>> = callbackFlow {
+        val chatsRef = db.reference.child(FirebaseConfig.Nodes.CHATS).child(currentUid)
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val chatIds = snapshot.children.mapNotNull { it.key }
+                if (chatIds.isEmpty()) {
+                    trySend(emptyList())
+                    return
+                }
+                val allStarred = mutableListOf<ChatMessage>()
+                var remaining = chatIds.size
+                for (cid in chatIds) {
+                    db.reference.child(FirebaseConfig.Nodes.MESSAGES).child(cid)
+                        .orderByChild("isStarred").equalTo(true)
+                        .get().addOnCompleteListener { task ->
+                            if (task.isSuccessful && task.result != null) {
+                                for (msgChild in task.result.children) {
+                                    val msg = msgChild.getValue(ChatMessage::class.java)
+                                    if (msg != null && msg.deletedForUsers[currentUid] != true) {
+                                        allStarred.add(msg)
+                                    }
+                                }
+                            }
+                            remaining--
+                            if (remaining == 0) {
+                                allStarred.sortByDescending { it.timestamp }
+                                trySend(allStarred.toList())
+                            }
+                        }
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {
+                trySend(emptyList())
+            }
+        }
+        chatsRef.addValueEventListener(listener)
+        awaitClose { chatsRef.removeEventListener(listener) }
     }
 }

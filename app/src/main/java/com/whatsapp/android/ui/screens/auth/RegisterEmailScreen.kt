@@ -24,6 +24,8 @@ import com.whatsapp.android.ui.theme.*
 
 @Composable
 fun RegisterEmailScreen(
+    isLoading: Boolean = false,
+    errorMessage: String? = null,
     onBack: () -> Unit,
     onContinueEmail: (email: String) -> Unit,
     onSignUpWithGoogle: () -> Unit
@@ -172,6 +174,7 @@ fun RegisterEmailScreen(
         // Sign Up with Google
         OutlinedButton(
             onClick = onSignUpWithGoogle,
+            enabled = !isLoading,
             shape = RoundedCornerShape(26.dp),
             colors = ButtonDefaults.outlinedButtonColors(containerColor = WhatsAppDarkSurface),
             border = ButtonDefaults.outlinedButtonBorder.copy(
@@ -181,19 +184,43 @@ fun RegisterEmailScreen(
                 .fillMaxWidth()
                 .height(52.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.AccountCircle,
-                contentDescription = "Google",
-                tint = WhatsAppLightGreen,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = "Sign up with Google",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = WhatsAppTextLight
-            )
+            if (isLoading) {
+                CircularProgressIndicator(
+                    color = WhatsAppLightGreen,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(24.dp)
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.AccountCircle,
+                    contentDescription = "Google",
+                    tint = WhatsAppLightGreen,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Sign up with Google",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = WhatsAppTextLight
+                )
+            }
+        }
+
+        if (errorMessage != null) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = WhatsAppRed.copy(alpha = 0.15f)),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = errorMessage,
+                    color = WhatsAppRed,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                )
+            }
         }
     }
 }

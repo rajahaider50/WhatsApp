@@ -228,7 +228,7 @@ fun CallsTab(
                 .align(Alignment.BottomEnd)
                 .padding(end = 16.dp, bottom = 16.dp)
         ) {
-            Icon(Icons.Default.AddCall, contentDescription = "New Call", modifier = Modifier.size(24.dp))
+            Icon(Icons.Default.Call, contentDescription = "New Call", modifier = Modifier.size(24.dp))
         }
     }
 }

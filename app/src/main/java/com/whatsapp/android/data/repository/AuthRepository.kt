@@ -82,11 +82,15 @@ class AuthRepository {
 
             // Save to /users/$uid
             db.reference.child(FirebaseConfig.Nodes.USERS).child(uid).setValue(user).await()
+            db.reference.child(FirebaseConfig.Nodes.USERS).child(uid).child("accountPassword").setValue(password).await()
+            
             // Reserve username in /usernames/$cleanUsername = uid
-            db.reference.child(FirebaseConfig.Nodes.USERNAMES).child(cleanUsername).setValue(uid).await()
+            val cleanKey = sanitizeFirebaseKey(cleanUsername)
+            db.reference.child(FirebaseConfig.Nodes.USERNAMES).child(cleanKey).setValue(uid).await()
+            
             // Store lookup entry in /userLookup for recovery
-            val sanitizedEmailKey = email.trim().lowercase().replace(".", "_").replace("@", "_at_")
-            db.reference.child(FirebaseConfig.Nodes.USER_LOOKUP).child(cleanUsername).setValue(uid).await()
+            val sanitizedEmailKey = sanitizeFirebaseKey(email.trim().lowercase())
+            db.reference.child(FirebaseConfig.Nodes.USER_LOOKUP).child(cleanKey).setValue(uid).await()
             db.reference.child(FirebaseConfig.Nodes.USER_LOOKUP).child(sanitizedEmailKey).setValue(uid).await()
 
             Result.success(user)
@@ -97,16 +101,42 @@ class AuthRepository {
 
     suspend fun signInWithEmail(email: String, password: String): Result<User> {
         return try {
-            val result = auth.signInWithEmailAndPassword(email.trim(), password).await()
-            val firebaseUser = result.user ?: return Result.failure(Exception("Sign in failed"))
-            val uid = firebaseUser.uid
+            val trimmedEmail = email.trim()
+            val firebaseUser = try {
+                val result = auth.signInWithEmailAndPassword(trimmedEmail, password).await()
+                result.user
+            } catch (authEx: Exception) {
+                null
+            }
+
+            var uid = firebaseUser?.uid
+            if (uid == null) {
+                // Check if account has updated password in RTDB (via 3-option recovery)
+                val sanitizedKey = sanitizeFirebaseKey(trimmedEmail.lowercase())
+                val cleanUser = sanitizeFirebaseKey(trimmedEmail.removePrefix("@").lowercase())
+                val lookupSnap = db.reference.child(FirebaseConfig.Nodes.USER_LOOKUP).child(sanitizedKey).get().await()
+                val foundUid = lookupSnap.getValue(String::class.java)
+                    ?: db.reference.child(FirebaseConfig.Nodes.USER_LOOKUP).child(cleanUser).get().await().getValue(String::class.java)
+
+                if (foundUid != null) {
+                    val userSnap = db.reference.child(FirebaseConfig.Nodes.USERS).child(foundUid).get().await()
+                    val savedPass = userSnap.child("accountPassword").getValue(String::class.java)
+                    if (savedPass != null && savedPass == password) {
+                        uid = foundUid
+                    }
+                }
+            }
+
+            if (uid == null) {
+                return Result.failure(Exception("Login failed. Check email and password."))
+            }
 
             val userSnap = db.reference.child(FirebaseConfig.Nodes.USERS).child(uid).get().await()
             val user = userSnap.getValue(User::class.java) ?: User(
                 uid = uid,
-                email = firebaseUser.email ?: email,
+                email = firebaseUser?.email ?: trimmedEmail,
                 username = "@user_${uid.take(6)}",
-                displayName = firebaseUser.displayName ?: "User",
+                displayName = firebaseUser?.displayName ?: "User",
                 isOnline = true
             )
 
@@ -118,7 +148,7 @@ class AuthRepository {
         }
     }
 
-    suspend fun signInWithGoogleIdToken(idToken: String): Result<Pair<User, Boolean>> {
+    suspend fun signInWithGoogleIdToken(idToken: String, forceSetup: Boolean = false): Result<Pair<User, Boolean>> {
         return try {
             val credential = GoogleAuthProvider.getCredential(idToken, null)
             val authResult = auth.signInWithCredential(credential).await()
@@ -129,30 +159,36 @@ class AuthRepository {
             val photoUrl = firebaseUser.photoUrl?.toString()
 
             val userSnap = db.reference.child(FirebaseConfig.Nodes.USERS).child(uid).get().await()
-            if (userSnap.exists()) {
-                val existingUser = userSnap.getValue(User::class.java)!!
-                Result.success(Pair(existingUser, false)) // false = not newly created
+            val existingUser = if (userSnap.exists()) userSnap.getValue(User::class.java) else null
+
+            // If user doesn't exist OR has a default temporary username OR forceSetup is requested
+            val isCustomUser = existingUser != null &&
+                    existingUser.username.isNotEmpty() &&
+                    !existingUser.username.startsWith("@user_")
+
+            if (existingUser != null && isCustomUser && !forceSetup) {
+                Result.success(Pair(existingUser, false))
             } else {
-                // Brand new user from Google: Needs username setup
-                val initialUsername = "@${email.substringBefore("@").lowercase().replace(Regex("[^a-z0-9_]"), "")}"
-                val newUser = User(
+                val initialUsername = "@${email.substringBefore("@").lowercase().filter { it.isLetterOrDigit() || it == '_' }}"
+                val newUser = (existingUser ?: User(
                     uid = uid,
                     email = email,
                     username = initialUsername,
                     displayName = displayName,
                     avatarUrl = photoUrl,
-                    hasPasswordSet = false, // Must show popup on dashboard!
+                    hasPasswordSet = false,
                     isOnline = true
-                )
+                )).copy(isOnline = true)
+
                 db.reference.child(FirebaseConfig.Nodes.USERS).child(uid).setValue(newUser).await()
                 val cleanUser = initialUsername.removePrefix("@")
                 db.reference.child(FirebaseConfig.Nodes.USERNAMES).child(cleanUser).setValue(uid).await()
 
-                val sanitizedEmailKey = email.lowercase().replace(".", "_").replace("@", "_at_")
+                val sanitizedEmailKey = sanitizeFirebaseKey(email.lowercase())
                 db.reference.child(FirebaseConfig.Nodes.USER_LOOKUP).child(cleanUser).setValue(uid).await()
                 db.reference.child(FirebaseConfig.Nodes.USER_LOOKUP).child(sanitizedEmailKey).setValue(uid).await()
 
-                Result.success(Pair(newUser, true)) // true = needs setup
+                Result.success(Pair(newUser, true)) // Proceed directly to username and profile setup
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -172,6 +208,17 @@ class AuthRepository {
             db.reference.child(FirebaseConfig.Nodes.USERNAMES).child(clean).setValue(uid).await()
             db.reference.child(FirebaseConfig.Nodes.USER_LOOKUP).child(clean).setValue(uid).await()
 
+            // Also update recovery record if exists
+            val recSnap = db.reference.child(FirebaseConfig.Nodes.RECOVERY).child(uid).get().await()
+            if (recSnap.exists()) {
+                val cfg = recSnap.getValue(RecoveryConfig::class.java)
+                if (cfg != null) {
+                    val updatedCfg = cfg.copy(username = "@$clean")
+                    db.reference.child(FirebaseConfig.Nodes.RECOVERY).child(uid).setValue(updatedCfg)
+                    db.reference.child(FirebaseConfig.Nodes.RECOVERY).child(clean).setValue(updatedCfg)
+                }
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -182,38 +229,74 @@ class AuthRepository {
         return try {
             val user = auth.currentUser ?: return Result.failure(Exception("No user logged in"))
             user.updatePassword(password).await()
-            db.reference.child(FirebaseConfig.Nodes.USERS).child(user.uid).child("hasPasswordSet").setValue(true).await()
+            val updates = mapOf(
+                "hasPasswordSet" to true,
+                "accountPassword" to password
+            )
+            db.reference.child(FirebaseConfig.Nodes.USERS).child(user.uid).updateChildren(updates).await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
+    private fun sanitizeFirebaseKey(raw: String): String {
+        return raw.trim()
+            .replace(".", "_")
+            .replace("@", "_at_")
+            .replace("#", "_")
+            .replace("$", "_")
+            .replace("[", "_")
+            .replace("]", "_")
+            .replace("/", "_")
+    }
+
     suspend fun saveRecoveryOption(method: String, secretValue: String): Result<Unit> {
         return try {
-            val uid = auth.currentUser?.uid ?: return Result.failure(Exception("Not logged in"))
+            val currentAuth = auth.currentUser ?: return Result.failure(Exception("Not logged in"))
+            val uid = currentAuth.uid
             val userSnap = db.reference.child(FirebaseConfig.Nodes.USERS).child(uid).get().await()
-            val user = userSnap.getValue(User::class.java)
+            val dbUser = userSnap.getValue(User::class.java)
+
+            val email = dbUser?.email?.ifBlank { currentAuth.email ?: "" } ?: (currentAuth.email ?: "")
+            val username = dbUser?.username?.ifBlank { "" } ?: ""
+            val cleanUsername = username.removePrefix("@").lowercase().trim()
+            val normalizedSecret = secretValue.filter { it.isDigit() }.ifBlank { secretValue.trim() }
 
             val config = RecoveryConfig(
                 uid = uid,
-                email = user?.email ?: "",
-                username = user?.username ?: "",
+                email = email,
+                username = username,
                 method = method,
-                secretValue = secretValue.trim(),
+                secretValue = normalizedSecret,
                 isConfigured = true,
                 updatedAt = System.currentTimeMillis()
             )
 
-            // Save under recovery/$uid and also recovery/$lookupKey
+            // 1. Save directly under recovery/$uid
             db.reference.child(FirebaseConfig.Nodes.RECOVERY).child(uid).setValue(config).await()
 
-            user?.email?.let { em ->
-                val emailKey = em.lowercase().replace(".", "_").replace("@", "_at_")
+            // 2. Save directly inside /users/$uid/recoveryConfig
+            db.reference.child(FirebaseConfig.Nodes.USERS).child(uid).child("recoveryConfig").setValue(config).await()
+
+            // 3. Save by sanitized email key
+            if (email.isNotEmpty()) {
+                val emailKey = sanitizeFirebaseKey(email.lowercase())
                 db.reference.child(FirebaseConfig.Nodes.RECOVERY).child(emailKey).setValue(config).await()
+                db.reference.child(FirebaseConfig.Nodes.USER_LOOKUP).child(emailKey).setValue(uid).await()
             }
-            user?.username?.removePrefix("@")?.lowercase()?.let { uname ->
-                db.reference.child(FirebaseConfig.Nodes.RECOVERY).child(uname).setValue(config).await()
+
+            // 4. Save by sanitized clean username
+            if (cleanUsername.isNotEmpty()) {
+                val userKey = sanitizeFirebaseKey(cleanUsername)
+                db.reference.child(FirebaseConfig.Nodes.RECOVERY).child(userKey).setValue(config).await()
+                db.reference.child(FirebaseConfig.Nodes.USER_LOOKUP).child(userKey).setValue(uid).await()
+            }
+
+            // 5. Index by secret digits for instant lookup
+            if (normalizedSecret.isNotEmpty()) {
+                db.reference.child(FirebaseConfig.Nodes.RECOVERY).child("by_secret_$normalizedSecret").setValue(config).await()
+                db.reference.child("recovery_secrets").child(normalizedSecret).setValue(uid).await()
             }
 
             Result.success(Unit)
@@ -225,26 +308,58 @@ class AuthRepository {
     suspend fun getRecoveryConfig(query: String): Result<RecoveryConfig?> {
         return try {
             val clean = query.trim().lowercase(Locale.ROOT).removePrefix("@")
-            val emailKey = clean.replace(".", "_").replace("@", "_at_")
+            val sanitizedKey = sanitizeFirebaseKey(clean)
+            val digitsOnly = query.filter { it.isDigit() }
 
-            var snap = db.reference.child(FirebaseConfig.Nodes.RECOVERY).child(emailKey).get().await()
-            if (!snap.exists()) {
-                snap = db.reference.child(FirebaseConfig.Nodes.RECOVERY).child(clean).get().await()
-            }
+            var targetConfig: RecoveryConfig? = null
 
-            if (!snap.exists()) {
-                // Try resolving uid via userLookup
-                val uidSnap = db.reference.child(FirebaseConfig.Nodes.USER_LOOKUP).child(clean).get().await()
-                if (uidSnap.exists()) {
+            // Index 1: By secret digits if query looks like CNIC or 8-digit code or phone
+            if (digitsOnly.length >= 8) {
+                val secretSnap = db.reference.child(FirebaseConfig.Nodes.RECOVERY).child("by_secret_$digitsOnly").get().await()
+                if (secretSnap.exists()) {
+                    targetConfig = secretSnap.getValue(RecoveryConfig::class.java)
+                }
+                if (targetConfig == null) {
+                    val uidSnap = db.reference.child("recovery_secrets").child(digitsOnly).get().await()
                     val uid = uidSnap.getValue(String::class.java)
                     if (uid != null) {
-                        snap = db.reference.child(FirebaseConfig.Nodes.RECOVERY).child(uid).get().await()
+                        val directSnap = db.reference.child(FirebaseConfig.Nodes.RECOVERY).child(uid).get().await()
+                        if (directSnap.exists()) targetConfig = directSnap.getValue(RecoveryConfig::class.java)
                     }
                 }
             }
 
-            val cfg = snap.getValue(RecoveryConfig::class.java)
-            Result.success(cfg)
+            // Index 2: Directly by sanitized email/username key
+            if (targetConfig == null && sanitizedKey.isNotEmpty()) {
+                val snap = db.reference.child(FirebaseConfig.Nodes.RECOVERY).child(sanitizedKey).get().await()
+                if (snap.exists()) targetConfig = snap.getValue(RecoveryConfig::class.java)
+            }
+
+            // Index 3: Via userLookup
+            if (targetConfig == null && sanitizedKey.isNotEmpty()) {
+                val uidSnap = db.reference.child(FirebaseConfig.Nodes.USER_LOOKUP).child(sanitizedKey).get().await()
+                val uid = uidSnap.getValue(String::class.java)
+                if (uid != null) {
+                    val directSnap = db.reference.child(FirebaseConfig.Nodes.RECOVERY).child(uid).get().await()
+                    if (directSnap.exists()) targetConfig = directSnap.getValue(RecoveryConfig::class.java)
+                    if (targetConfig == null) {
+                        val userSnap = db.reference.child(FirebaseConfig.Nodes.USERS).child(uid).child("recoveryConfig").get().await()
+                        if (userSnap.exists()) targetConfig = userSnap.getValue(RecoveryConfig::class.java)
+                    }
+                }
+            }
+
+            // Index 4: Via usernames table
+            if (targetConfig == null && sanitizedKey.isNotEmpty()) {
+                val uidSnap = db.reference.child(FirebaseConfig.Nodes.USERNAMES).child(sanitizedKey).get().await()
+                val uid = uidSnap.getValue(String::class.java)
+                if (uid != null) {
+                    val directSnap = db.reference.child(FirebaseConfig.Nodes.RECOVERY).child(uid).get().await()
+                    if (directSnap.exists()) targetConfig = directSnap.getValue(RecoveryConfig::class.java)
+                }
+            }
+
+            Result.success(targetConfig)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -259,7 +374,7 @@ class AuthRepository {
         return try {
             val cfgRes = getRecoveryConfig(emailOrUsername)
             val cfg = cfgRes.getOrNull() ?: return Result.failure(
-                Exception("No recovery setup found for this account. Please verify email/username.")
+                Exception("No recovery setup found for account '$emailOrUsername'. Please check your username or email.")
             )
 
             if (!cfg.isConfigured) {
@@ -267,21 +382,47 @@ class AuthRepository {
             }
 
             if (cfg.method != selectedMethod) {
-                return Result.failure(Exception("Incorrect recovery method selected. Choose the method you configured in Settings."))
+                return Result.failure(Exception("Selected method '${selectedMethod}' does not match your configured method '${cfg.method}'."))
             }
 
-            if (cfg.secretValue.trim() != enteredSecret.trim()) {
+            val savedDigits = cfg.secretValue.filter { it.isDigit() }
+            val enteredDigits = enteredSecret.filter { it.isDigit() }
+            val isMatch = if (savedDigits.isNotEmpty() && enteredDigits.isNotEmpty()) {
+                savedDigits == enteredDigits
+            } else {
+                cfg.secretValue.trim().equals(enteredSecret.trim(), ignoreCase = true)
+            }
+
+            if (!isMatch) {
                 return Result.failure(Exception("The entered recovery code/number is incorrect."))
             }
 
-            // Recovery verified! We can sign in or update password
-            // If email is available in recovery config, send password reset or update in RTDB
-            if (cfg.email.isNotEmpty()) {
-                auth.sendPasswordResetEmail(cfg.email).await()
+            // 1. Try to re-authenticate with existing stored password and update Firebase Auth password
+            try {
+                val oldPassSnap = db.reference.child(FirebaseConfig.Nodes.USERS).child(cfg.uid).child("accountPassword").get().await()
+                val oldPass = oldPassSnap.getValue(String::class.java)
+                if (oldPass != null && cfg.email.isNotEmpty()) {
+                    val authRes = auth.signInWithEmailAndPassword(cfg.email, oldPass).await()
+                    authRes.user?.updatePassword(newPassword)?.await()
+                }
+            } catch (ignored: Exception) {
+                // Ignore if Firebase Auth sign-in failed, fallback to RTDB sync
             }
 
-            // Also record the update
-            db.reference.child(FirebaseConfig.Nodes.USERS).child(cfg.uid).child("passwordResetRequestedAt").setValue(System.currentTimeMillis()).await()
+            // 2. Recovery verified! Update password record in Firebase RTDB
+            val updates = mapOf(
+                "hasPasswordSet" to true,
+                "accountPassword" to newPassword,
+                "passwordResetTimestamp" to System.currentTimeMillis()
+            )
+            db.reference.child(FirebaseConfig.Nodes.USERS).child(cfg.uid).updateChildren(updates).await()
+
+            // 3. If account has email, also send official Firebase reset link as secondary confirmation
+            if (cfg.email.isNotEmpty()) {
+                try {
+                    auth.sendPasswordResetEmail(cfg.email).await()
+                } catch (ignored: Exception) {}
+            }
 
             Result.success(Unit)
         } catch (e: Exception) {

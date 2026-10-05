@@ -35,6 +35,11 @@ fun HomeScreen(
     onEditMyProfileClick: () -> Unit,
     onRecoverySetupClick: () -> Unit,
     onPrivacySettingsClick: () -> Unit,
+    onStarredClick: () -> Unit = {},
+    onChatsClick: () -> Unit = {},
+    onStorageClick: () -> Unit = {},
+    onAppInfoClick: () -> Unit = {},
+    onDeveloperProfileClick: () -> Unit = {},
     onSignOutClick: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -85,9 +90,10 @@ fun HomeScreen(
                 onCameraClick = onAddStatusClick,
                 onSearchClick = { showNewChatDialog = true },
                 onSettingsClick = { selectedTab = WhatsAppTab.SETTINGS },
-                onStarredClick = {},
+                onStarredClick = onStarredClick,
                 onRecoveryClick = onRecoverySetupClick,
                 onProfileClick = onEditMyProfileClick,
+                onDeveloperClick = onDeveloperProfileClick,
                 onSignOutClick = onSignOutClick
             )
         },
@@ -110,6 +116,7 @@ fun HomeScreen(
             when (selectedTab) {
                 WhatsAppTab.CHATS -> {
                     ChatsTab(
+                        currentUser = currentUser,
                         chats = chats,
                         currentUid = currentUser.uid,
                         onChatClick = { preview ->
@@ -155,7 +162,11 @@ fun HomeScreen(
                         onProfileClick = onEditMyProfileClick,
                         onAccountRecoveryClick = onRecoverySetupClick,
                         onPrivacyClick = onPrivacySettingsClick,
-                        onStarredClick = {},
+                        onStarredClick = onStarredClick,
+                        onChatsClick = onChatsClick,
+                        onStorageClick = onStorageClick,
+                        onAppInfoClick = onAppInfoClick,
+                        onDeveloperProfileClick = onDeveloperProfileClick,
                         onSignOutClick = onSignOutClick
                     )
                 }

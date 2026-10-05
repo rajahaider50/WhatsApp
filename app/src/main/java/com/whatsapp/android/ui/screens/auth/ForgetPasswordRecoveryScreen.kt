@@ -252,18 +252,35 @@ fun ForgetPasswordRecoveryScreen(
 
                     coroutineScope.launch {
                         try {
-                            val cfgRes = authRepo.getRecoveryConfig(accountQuery)
+                            val cleanQuery = accountQuery.trim()
+                            val cfgRes = authRepo.getRecoveryConfig(cleanQuery)
                             val cfg = cfgRes.getOrNull()
 
                             if (cfg == null || !cfg.isConfigured) {
-                                errorMessage = "No recovery setup found for this account. Recovery must be set up in Settings first."
+                                errorMessage = "No recovery setup found for account '$cleanQuery'. Please ensure you entered the exact username or email you registered with."
                             } else if (cfg.method != selectedMethod!!.name) {
-                                errorMessage = "Incorrect method! You set up ${cfg.method} for this account."
-                            } else if (cfg.secretValue.trim() != secretInput.trim()) {
-                                errorMessage = "The entered recovery code/number does not match."
+                                val methodTitle = when (cfg.method) {
+                                    RecoveryMethod.BACKUP_CODE.name -> "8-Digit Forget Code"
+                                    RecoveryMethod.CNIC.name -> "13-Digit CNIC Code"
+                                    RecoveryMethod.PHONE.name -> "Restore Phone Number"
+                                    else -> cfg.method
+                                }
+                                errorMessage = "Incorrect recovery method selected! This account configured: $methodTitle."
                             } else {
-                                // Match verified!
-                                isVerified = true
+                                val savedDigits = cfg.secretValue.filter { it.isDigit() }
+                                val enteredDigits = secretInput.filter { it.isDigit() }
+                                val isMatch = if (savedDigits.isNotEmpty() && enteredDigits.isNotEmpty()) {
+                                    savedDigits == enteredDigits
+                                } else {
+                                    cfg.secretValue.trim().equals(secretInput.trim(), ignoreCase = true)
+                                }
+
+                                if (!isMatch) {
+                                    errorMessage = "The entered recovery code/number does not match."
+                                } else {
+                                    // Match verified!
+                                    isVerified = true
+                                }
                             }
                         } catch (e: Exception) {
                             errorMessage = e.message ?: "Verification failed"

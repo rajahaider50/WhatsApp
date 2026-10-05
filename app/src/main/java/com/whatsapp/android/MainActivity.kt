@@ -25,8 +25,7 @@ import com.whatsapp.android.ui.screens.home.HomeScreen
 import com.whatsapp.android.ui.screens.permissions.PermissionsScreen
 import com.whatsapp.android.ui.screens.profile.EditMyProfileScreen
 import com.whatsapp.android.ui.screens.profile.UserProfileScreen
-import com.whatsapp.android.ui.screens.settings.PrivacySettingsScreen
-import com.whatsapp.android.ui.screens.settings.RecoverySetupScreen
+import com.whatsapp.android.ui.screens.settings.*
 import com.whatsapp.android.ui.screens.splash.SplashScreen
 import com.whatsapp.android.ui.screens.status.AddStatusScreen
 import com.whatsapp.android.ui.screens.status.ViewStatusScreen
@@ -59,6 +58,11 @@ sealed interface AppRoute {
     data object AddStatus : AppRoute
     data class ViewStatus(val story: StatusStory) : AppRoute
     data class FullscreenPhoto(val url: String) : AppRoute
+    data object DeveloperProfile : AppRoute
+    data object StarredMessages : AppRoute
+    data object ChatSettings : AppRoute
+    data object StorageData : AppRoute
+    data object AppInfo : AppRoute
 }
 
 class MainActivity : ComponentActivity() {
@@ -131,11 +135,12 @@ fun WhatsAppMainApp(
                 isAuthLoading = true
                 authError = null
                 coroutineScope.launch {
-                    val authRes = authRepo.signInWithGoogleIdToken(idToken)
+                    val isFromRegister = currentRoute is AppRoute.RegisterEmail || currentRoute is AppRoute.WelcomeAuth
+                    val authRes = authRepo.signInWithGoogleIdToken(idToken, forceSetup = isFromRegister)
                     isAuthLoading = false
                     authRes.onSuccess { (user, needsSetup) ->
                         currentUser = user
-                        if (needsSetup) {
+                        if (needsSetup || isFromRegister) {
                             currentRoute = AppRoute.UsernameProfileSetup(
                                 email = user.email,
                                 password = null,
@@ -228,11 +233,15 @@ fun WhatsAppMainApp(
 
             AppRoute.RegisterEmail -> {
                 RegisterEmailScreen(
+                    isLoading = isAuthLoading,
+                    errorMessage = authError,
                     onBack = { currentRoute = AppRoute.WelcomeAuth },
                     onContinueEmail = { email ->
                         currentRoute = AppRoute.SetPassword(email)
                     },
                     onSignUpWithGoogle = {
+                        isAuthLoading = true
+                        authError = null
                         googleLauncher.launch(googleSignInClient.signInIntent)
                     }
                 )
@@ -322,6 +331,11 @@ fun WhatsAppMainApp(
                         onEditMyProfileClick = { currentRoute = AppRoute.EditMyProfile },
                         onRecoverySetupClick = { currentRoute = AppRoute.RecoverySetup },
                         onPrivacySettingsClick = { currentRoute = AppRoute.PrivacySettings },
+                        onStarredClick = { currentRoute = AppRoute.StarredMessages },
+                        onChatsClick = { currentRoute = AppRoute.ChatSettings },
+                        onStorageClick = { currentRoute = AppRoute.StorageData },
+                        onAppInfoClick = { currentRoute = AppRoute.AppInfo },
+                        onDeveloperProfileClick = { currentRoute = AppRoute.DeveloperProfile },
                         onSignOutClick = {
                             authRepo.signOut()
                             currentUser = null
@@ -440,6 +454,41 @@ fun WhatsAppMainApp(
                 FullscreenImageViewer(
                     imageUrl = route.url,
                     onBack = { currentRoute = AppRoute.Home }
+                )
+            }
+
+            AppRoute.DeveloperProfile -> {
+                DeveloperProfileScreen(
+                    onBack = { currentRoute = AppRoute.Home }
+                )
+            }
+
+            AppRoute.StarredMessages -> {
+                if (currentUser != null) {
+                    StarredMessagesScreen(
+                        currentUid = currentUser!!.uid,
+                        realtimeRepo = realtimeRepo,
+                        onBack = { currentRoute = AppRoute.Home }
+                    )
+                }
+            }
+
+            AppRoute.ChatSettings -> {
+                ChatSettingsScreen(
+                    onBack = { currentRoute = AppRoute.Home }
+                )
+            }
+
+            AppRoute.StorageData -> {
+                StorageDataScreen(
+                    onBack = { currentRoute = AppRoute.Home }
+                )
+            }
+
+            AppRoute.AppInfo -> {
+                AppInfoScreen(
+                    onBack = { currentRoute = AppRoute.Home },
+                    onOpenDeveloperProfile = { currentRoute = AppRoute.DeveloperProfile }
                 )
             }
         }

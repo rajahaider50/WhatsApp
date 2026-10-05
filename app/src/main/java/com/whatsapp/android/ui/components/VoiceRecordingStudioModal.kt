@@ -112,7 +112,7 @@ fun VoiceRecordingStudioModal(
                         }
 
                         displayAmps.forEach { amp ->
-                            val barHeight = (amp * 48.dp).coerceIn(4.dp, 48.dp)
+                            val barHeight = (48f * amp).dp.coerceIn(4.dp, 48.dp)
                             Box(
                                 modifier = Modifier
                                     .width(4.dp)

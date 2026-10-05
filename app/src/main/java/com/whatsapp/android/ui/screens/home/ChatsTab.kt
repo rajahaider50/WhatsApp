@@ -32,6 +32,7 @@ import java.util.Locale
 
 @Composable
 fun ChatsTab(
+    currentUser: User,
     chats: List<ChatPreview>,
     currentUid: String,
     onChatClick: (ChatPreview) -> Unit,
@@ -44,10 +45,26 @@ fun ChatsTab(
     var quickPopupUser by remember { mutableStateOf<User?>(null) }
     var searchQuery by remember { mutableStateOf("") }
 
+    val selfChatId = "self_${currentUser.uid}"
+    val existingSelfChat = chats.find { it.chatId == selfChatId }
+    val selfChatPreview = existingSelfChat ?: ChatPreview(
+        chatId = selfChatId,
+        peerUid = currentUser.uid,
+        peerUsername = currentUser.username,
+        peerDisplayName = "You",
+        peerAvatarUrl = currentUser.avatarUrl,
+        lastMessage = "Message yourself",
+        lastMessageType = "TEXT",
+        lastTimestamp = 0L,
+        unreadCount = 0,
+        isOnline = true
+    )
+
+    val otherChats = chats.filter { it.chatId != selfChatId }
     val filteredChats = if (searchQuery.isBlank()) {
-        chats
+        otherChats
     } else {
-        chats.filter {
+        otherChats.filter {
             it.peerDisplayName.contains(searchQuery, ignoreCase = true) ||
             it.peerUsername.contains(searchQuery, ignoreCase = true) ||
             it.lastMessage.contains(searchQuery, ignoreCase = true)
@@ -96,40 +113,46 @@ fun ChatsTab(
                 )
             }
 
-            if (filteredChats.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.ChatBubbleOutline,
-                            contentDescription = null,
-                            tint = WhatsAppTextMuted,
-                            modifier = Modifier.size(64.dp)
+            LazyColumn(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // Pinned "You (Message yourself)" Self Chat Row
+                val matchesSelf = searchQuery.isBlank() ||
+                        "you".contains(searchQuery, ignoreCase = true) ||
+                        currentUser.displayName.contains(searchQuery, ignoreCase = true) ||
+                        currentUser.username.contains(searchQuery, ignoreCase = true)
+
+                if (matchesSelf) {
+                    item(key = "self_chat_pinned") {
+                        SelfChatItemRow(
+                            chat = selfChatPreview,
+                            currentUser = currentUser,
+                            onRowClick = { onChatClick(selfChatPreview) },
+                            onAvatarClick = { onPhotoClick(currentUser.avatarUrl) }
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = if (searchQuery.isEmpty()) "No chats yet" else "No matching chats",
-                            color = WhatsAppTextLight,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = if (searchQuery.isEmpty()) "Tap the green button below to start chatting with anyone via @username" else "Try searching with a different keyword",
-                            color = WhatsAppTextMuted,
-                            fontSize = 13.sp,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        HorizontalDivider(
+                            color = WhatsAppDarkCard.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(horizontal = 16.dp)
                         )
                     }
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize()
-                ) {
+
+                if (filteredChats.isEmpty() && !matchesSelf) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No matching chats",
+                                color = WhatsAppTextMuted,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                } else {
                     items(filteredChats, key = { it.chatId }) { chat ->
                         ChatItemRow(
                             chat = chat,
@@ -363,3 +386,106 @@ private fun ChatItemRow(
         }
     }
 }
+
+@Composable
+private fun SelfChatItemRow(
+    chat: ChatPreview,
+    currentUser: User,
+    onRowClick: () -> Unit,
+    onAvatarClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onRowClick() }
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(54.dp)
+                .clip(CircleShape)
+                .background(WhatsAppDarkCard)
+                .clickable { onAvatarClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            if (!currentUser.avatarUrl.isNullOrEmpty()) {
+                AsyncImage(
+                    model = currentUser.avatarUrl,
+                    contentDescription = "You",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = null,
+                    tint = WhatsAppLightGreen,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+
+            // Small personal bookmark/message yourself badge
+            Box(
+                modifier = Modifier
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(WhatsAppLightGreen)
+                    .align(Alignment.BottomEnd),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Bookmark,
+                    contentDescription = null,
+                    tint = Color.Black,
+                    modifier = Modifier.size(11.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "You",
+                        color = WhatsAppTextLight,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "(Message yourself)",
+                        color = WhatsAppLightGreen,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                // WhatsApp Pinned Icon
+                Icon(
+                    imageVector = Icons.Default.PushPin,
+                    contentDescription = "Pinned",
+                    tint = WhatsAppTextMuted,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(3.dp))
+
+            Text(
+                text = if (chat.lastMessage == "Message yourself" || chat.lastMessage.isBlank()) "Message yourself" else chat.lastMessage,
+                color = WhatsAppTextMuted,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+

@@ -37,6 +37,11 @@ fun StatusTab(
     onStatusClick: (StatusStory) -> Unit,
     onPrivacyClick: () -> Unit
 ) {
+    var showPrivacyModal by remember { mutableStateOf(false) }
+    var privacyMode by remember { mutableStateOf("MY_CONTACTS") }
+    var excludedCount by remember { mutableIntStateOf(0) }
+    var selectedCount by remember { mutableIntStateOf(0) }
+
     val myStatuses = statuses.filter { it.uid == currentUser?.uid }
     val otherStatuses = statuses.filter { it.uid != currentUser?.uid }
 
@@ -46,38 +51,59 @@ fun StatusTab(
             .background(WhatsAppDarkBg)
             .padding(vertical = 8.dp)
     ) {
-        // Status Privacy Bar
+        // Status Privacy Bar with dynamic counter display
         item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onPrivacyClick() }
+                    .clickable { showPrivacyModal = true }
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Security,
-                        contentDescription = null,
-                        tint = WhatsAppLightGreen,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "Status Privacy",
-                        color = WhatsAppTextLight,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(WhatsAppDarkCard),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = null,
+                            tint = WhatsAppLightGreen,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Status Privacy",
+                            color = WhatsAppTextLight,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        val privacySubtitle = when (privacyMode) {
+                            "CONTACTS_EXCEPT" -> "My contacts except ($excludedCount excluded)"
+                            "ONLY_SHARE_WITH" -> "Only share with ($selectedCount selected)"
+                            else -> "My contacts (All contacts)"
+                        }
+                        Text(
+                            text = privacySubtitle,
+                            color = WhatsAppLightGreen,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
 
-                Text(
-                    text = "Configure",
-                    color = WhatsAppLightGreen,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                IconButton(onClick = { showPrivacyModal = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = "Configure Privacy",
+                        tint = WhatsAppLightGreen
+                    )
+                }
             }
 
             HorizontalDivider(color = WhatsAppDarkCard, modifier = Modifier.padding(vertical = 4.dp))
@@ -239,5 +265,140 @@ fun StatusTab(
                 }
             }
         }
+    }
+
+    // Status Privacy Settings Dialog with interactive live counter
+    if (showPrivacyModal) {
+        AlertDialog(
+            onDismissRequest = { showPrivacyModal = false },
+            containerColor = WhatsAppDarkCard,
+            title = {
+                Text(
+                    text = "Status Privacy",
+                    color = WhatsAppTextLight,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Who can see my status updates:",
+                        color = WhatsAppTextMuted,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+
+                    // 1. My Contacts
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { privacyMode = "MY_CONTACTS" }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = privacyMode == "MY_CONTACTS",
+                            onClick = { privacyMode = "MY_CONTACTS" },
+                            colors = RadioButtonDefaults.colors(selectedColor = WhatsAppLightGreen)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("My contacts", color = WhatsAppTextLight, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Share with all contacts", color = WhatsAppTextMuted, fontSize = 12.sp)
+                        }
+                    }
+
+                    // 2. My Contacts Except...
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { privacyMode = "CONTACTS_EXCEPT" }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = privacyMode == "CONTACTS_EXCEPT",
+                            onClick = { privacyMode = "CONTACTS_EXCEPT" },
+                            colors = RadioButtonDefaults.colors(selectedColor = WhatsAppLightGreen)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("My contacts except...", color = WhatsAppTextLight, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            Text("$excludedCount contacts excluded", color = if (privacyMode == "CONTACTS_EXCEPT") WhatsAppLightGreen else WhatsAppTextMuted, fontSize = 12.sp)
+                        }
+
+                        if (privacyMode == "CONTACTS_EXCEPT") {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { if (excludedCount > 0) excludedCount-- },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = WhatsAppLightGreen)
+                                }
+                                Text("$excludedCount", color = WhatsAppLightGreen, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp))
+                                IconButton(
+                                    onClick = { excludedCount++ },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = "Increase", tint = WhatsAppLightGreen)
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Only Share With...
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { privacyMode = "ONLY_SHARE_WITH" }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = privacyMode == "ONLY_SHARE_WITH",
+                            onClick = { privacyMode = "ONLY_SHARE_WITH" },
+                            colors = RadioButtonDefaults.colors(selectedColor = WhatsAppLightGreen)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Only share with...", color = WhatsAppTextLight, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            Text("$selectedCount contacts selected", color = if (privacyMode == "ONLY_SHARE_WITH") WhatsAppLightGreen else WhatsAppTextMuted, fontSize = 12.sp)
+                        }
+
+                        if (privacyMode == "ONLY_SHARE_WITH") {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { if (selectedCount > 0) selectedCount-- },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = WhatsAppLightGreen)
+                                }
+                                Text("$selectedCount", color = WhatsAppLightGreen, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp))
+                                IconButton(
+                                    onClick = { selectedCount++ },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = "Increase", tint = WhatsAppLightGreen)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showPrivacyModal = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = WhatsAppLightGreen)
+                ) {
+                    Text("Save Privacy", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPrivacyModal = false }) {
+                    Text("Cancel", color = WhatsAppTextMuted)
+                }
+            }
+        )
     }
 }

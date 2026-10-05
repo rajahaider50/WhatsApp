@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -214,63 +215,157 @@ fun UsernameProfileSetupScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        // Username Input with live availability check
-        OutlinedTextField(
-            value = if (username.startsWith("@")) username else if (username.isNotEmpty()) "@$username" else "",
-            onValueChange = {
-                val clean = it.removePrefix("@").filter { char -> char.isLetterOrDigit() || char == '_' }
-                username = "@$clean"
-                checkUsername(clean)
-            },
-            label = { Text("Choose Username (@xxxxxx)") },
-            placeholder = { Text("@yourname") },
-            leadingIcon = {
-                Icon(Icons.Default.AlternateEmail, contentDescription = null, tint = WhatsAppTextMuted)
-            },
-            trailingIcon = {
-                when {
-                    isCheckingUsername -> {
-                        CircularProgressIndicator(
-                            color = WhatsAppLightGreen,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    isUsernameAvailable == true -> {
-                        // Official Green Checkmark Icon as requested!
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Available",
-                            tint = WhatsAppLightGreen
-                        )
-                    }
-                    isUsernameAvailable == false -> {
-                        // Official Red Warning Icon
-                        Icon(
-                            imageVector = Icons.Default.Cancel,
-                            contentDescription = "Unavailable",
-                            tint = WhatsAppRed
-                        )
-                    }
+        // Guide text banner (as requested: user must not type @)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(WhatsAppTeal.copy(alpha = 0.15f))
+                .border(1.dp, WhatsAppTeal.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = null,
+                tint = WhatsAppLightGreen,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Do NOT type @ — only type your name/handle (e.g. raja_haider)",
+                color = WhatsAppTextLight,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Username Input with LTR layout direction to prevent inverted RTL text
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Ltr
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Stylish @ Badge on the left
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(WhatsAppDarkCard)
+                        .border(1.dp, WhatsAppDarkInput, RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "@",
+                        color = WhatsAppLightGreen,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
-            },
-            singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = if (isUsernameAvailable == true) WhatsAppLightGreen else if (isUsernameAvailable == false) WhatsAppRed else WhatsAppLightGreen,
-                unfocusedBorderColor = if (isUsernameAvailable == true) WhatsAppLightGreen else if (isUsernameAvailable == false) WhatsAppRed else WhatsAppDarkInput,
-                focusedLabelColor = WhatsAppLightGreen,
-                unfocusedLabelColor = WhatsAppTextMuted,
-                focusedTextColor = WhatsAppTextLight,
-                unfocusedTextColor = WhatsAppTextLight
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
 
-        // Feedback message
+                Spacer(modifier = Modifier.width(10.dp))
+
+                // Text Field for clean username (letters, digits, underscores ONLY)
+                OutlinedTextField(
+                    value = username.removePrefix("@"),
+                    onValueChange = { input ->
+                        val clean = input.removePrefix("@").filter { char -> char.isLetterOrDigit() || char == '_' }.lowercase()
+                        username = clean
+                        checkUsername(clean)
+                    },
+                    label = { Text("Choose Username") },
+                    placeholder = { Text("raja_haider") },
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Ascii
+                    ),
+                    trailingIcon = {
+                        when {
+                            isCheckingUsername -> {
+                                CircularProgressIndicator(
+                                    color = WhatsAppLightGreen,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            isUsernameAvailable == true -> {
+                                // Professional Tick Badge Box as requested!
+                                Box(
+                                    modifier = Modifier
+                                        .padding(end = 6.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(WhatsAppLightGreen.copy(alpha = 0.15f))
+                                        .border(1.dp, WhatsAppLightGreen, RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "Available",
+                                            tint = WhatsAppLightGreen,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Verified",
+                                            color = WhatsAppLightGreen,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                            isUsernameAvailable == false -> {
+                                // Red rejection badge box
+                                Box(
+                                    modifier = Modifier
+                                        .padding(end = 6.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(WhatsAppRed.copy(alpha = 0.15f))
+                                        .border(1.dp, WhatsAppRed, RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Cancel,
+                                            contentDescription = "Taken",
+                                            tint = WhatsAppRed,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Taken",
+                                            color = WhatsAppRed,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = if (isUsernameAvailable == true) WhatsAppLightGreen else if (isUsernameAvailable == false) WhatsAppRed else WhatsAppLightGreen,
+                        unfocusedBorderColor = if (isUsernameAvailable == true) WhatsAppLightGreen else if (isUsernameAvailable == false) WhatsAppRed else WhatsAppDarkInput,
+                        focusedLabelColor = WhatsAppLightGreen,
+                        unfocusedLabelColor = WhatsAppTextMuted,
+                        focusedTextColor = WhatsAppTextLight,
+                        unfocusedTextColor = WhatsAppTextLight
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        // Live status feedback message below
         if (usernameFeedbackMessage != null) {
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
